@@ -1,62 +1,85 @@
 import streamlit as st
 from openai import OpenAI
 
-# Set up the Streamlit app
+# Constants
+API_KEY_PREFIX = "sk-proj"
+SYSTEM_PROMPT = (
+    "You are an assistant that analyzes the contents of an email "
+    "and creates a short but meaningful email title."
+)
+MODEL_NAME = "gpt-4o-mini"
+
+# Initialize default session state
+def initialize_session_state():
+    if "api_key" not in st.session_state:
+        st.session_state["api_key"] = None
+    if "openai_client" not in st.session_state:
+        st.session_state["openai_client"] = None
+    if "email_title" not in st.session_state:
+        st.session_state["email_title"] = ""
+
+# Validate API key
+def validate_api_key(api_key):
+    if not api_key:
+        return "API key cannot be empty."
+    if not api_key.startswith(API_KEY_PREFIX):
+        return f"API key must start with '{API_KEY_PREFIX}'."
+    if api_key != api_key.strip():
+        return "API key contains leading or trailing whitespace."
+    return None
+
+# Initialize OpenAI client
+def initialize_openai_client():
+    if st.session_state["api_key"]:
+        st.session_state["openai_client"] = OpenAI(api_key=st.session_state["api_key"])
+
+# Generate email title
+def generate_title():
+    try:
+        client = st.session_state["openai_client"]
+        if not client:
+            st.error("OpenAI client is not initialized. Please add a valid API key.")
+            return None
+
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": st.session_state.get("user_prompt", "")}
+        ]
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        st.error(f"An error occurred while generating the title: {str(e)}")
+        return None
+
+# App start
+initialize_session_state()
 st.title("Email Title Generator")
 
-# Create a text area for the email content
+# Email input
 user_prompt = st.text_area("Paste your email text below:", height=300, placeholder="Enter the content of your email here...")
+st.session_state["user_prompt"] = user_prompt
 
-system_prompt = "You are an assistant that analyzes the contents of an email \
-and creates a short but meaningful email title"
-
-# Initialize session state for the API key
-if "api_key" not in st.session_state:
-    st.session_state["api_key"] = None
-
-# Function to call OpenAI API to generate email title
-def generate_title():
-    openai = OpenAI(api_key = st.session_state["api_key"])
-    messages_for =     [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt}
-    ]
-    response = openai.chat.completions.create(
-        model = "gpt-4o-mini",
-        messages = messages_for)
-    return response.choices[0].message.content
-
-# Add a button to generate the email title
+# Generate button
 if st.button("Generate Title"):
     if not st.session_state["api_key"]:
         st.warning("OpenAI API Key is required. Please enter it below.")
     else:
         st.session_state["email_title"] = generate_title()
-        st.info("Email title generated successfully!")
 
-# Create a smaller text area for the generated email title
-title_text = st.text_input("Proposed Email Title:", placeholder="Your email title will appear here...", key="email_title")
+# Display generated email title
+st.text_input("Proposed Email Title:", value=st.session_state["email_title"], key="email_title", disabled=True)
 
-# Display visual check for API key
-st.title("API Key Management")
-
-# Input text box to provide API Key
-api_key_input = st.text_input("Enter API Key:", key="api_key_input", type="password", placeholder="Paste your API Key here")
-
-# Button to save the API Key
+# API Key Management
+st.subheader("API Key Management")
+api_key_input = st.text_input("Enter API Key:", type="password", placeholder="Paste your API Key here")
 if st.button("Add API Key"):
-    if not api_key_input:
-        st.warning("No API key was found")
-    elif not api_key_input.startswith("sk-proj-"):
-        st.warning("An API key was found, but it doesn't start sk-pstreroj-;"
-              "please check you're using the right key")
-    elif api_key_input.strip() != api_key_input:
-        st.warning("An API key was found, but it looks like it might have space or "
-              "tab characters at the start or end - please remove them")
+    error = validate_api_key(api_key_input)
+    if error:
+        st.warning(error)
     else:
         st.session_state["api_key"] = api_key_input
-
-if st.session_state["api_key"]:
-    st.success("API Key is provided!")
-else:
-    st.warning("API Key is not provided!")
+        initialize_openai_client()
+        st.success("API Key saved successfully!")
